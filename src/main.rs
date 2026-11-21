@@ -3,6 +3,7 @@
 mod api;
 mod app;
 mod config;
+mod theme;
 mod views;
 mod worker;
 

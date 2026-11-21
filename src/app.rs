@@ -1,10 +1,10 @@
 use crate::api::{AuditEvent, Credentials, KeyKind, Policy, Secret, SecretMeta, Vault};
 use crate::config::Config;
 use crate::worker::{Job, Msg, Worker};
-use eframe::egui::{self, Color32, RichText};
+use crate::theme;
+use eframe::egui::{self, Color32, CornerRadius, Margin, RichText};
 use std::time::{Duration, Instant};
 
-pub const ACCENT: Color32 = Color32::from_rgb(0xE8, 0x5D, 0x3A);
 pub const CLIPBOARD_CLEAR_AFTER: Duration = Duration::from_secs(30);
 
 #[derive(PartialEq, Clone, Copy)]
@@ -75,12 +75,13 @@ pub struct App {
 
     pub toast: Option<Toast>,
     pub clipboard_set_at: Option<Instant>,
+    sized: bool,
 }
 
 impl App {
     pub fn new(cc: &eframe::CreationContext) -> Self {
         let cfg = Config::load();
-        apply_theme(&cc.egui_ctx, cfg.dark);
+        theme::apply(&cc.egui_ctx, cfg.seed, cfg.dark);
         let mut app = Self {
             worker: Worker::spawn(cc.egui_ctx.clone()),
             cfg,
@@ -104,6 +105,7 @@ impl App {
             audit_filter: String::new(),
             toast: None,
             clipboard_set_at: None,
+            sized: false,
         };
         // handy for scripting / demos: ONECLAW_API_KEY=... vault-explorer
         if let Ok(k) = std::env::var("ONECLAW_API_KEY") {
@@ -148,7 +150,7 @@ impl App {
             }
         }
         let creds = Credentials {
-            base_url: self.cfg.base_url.trim().to_string(),
+            base_url: std::env::var("ONECLAW_BASE_URL").unwrap_or_else(|_| self.cfg.base_url.trim().to_string()),
             kind: self.cfg.kind,
             api_key: self.api_key.trim().to_string(),
             agent_id: Some(self.cfg.agent_id.trim().to_string()),
@@ -327,243 +329,314 @@ impl App {
     }
 
     fn login_screen(&mut self, ctx: &egui::Context) {
-        egui::CentralPanel::default().show(ctx, |ui| {
+        let sc = theme::scheme(ctx);
+        egui::CentralPanel::default().frame(sc.panel(sc.surface)).show(ctx, |ui| {
             ui.vertical_centered(|ui| {
-                ui.add_space((ui.available_height() * 0.18).max(20.0));
-                ui.label(RichText::new("🔐").size(44.0));
-                ui.heading(RichText::new("1Claw Vault Explorer").strong().size(26.0));
-                ui.label(RichText::new("Browse your vaults, secrets and audit trail").weak());
+                ui.add_space((ui.available_height() * 0.12).max(16.0));
+
+                theme::icon_tile(ui, &sc, "🔐", 72.0);
+                ui.add_space(12.0);
+                ui.label(RichText::new("1Claw Vault Explorer").size(30.0).color(sc.on_surface));
+                ui.label(RichText::new("Browse your vaults, secrets and audit trail").color(sc.on_surface_variant));
                 ui.add_space(24.0);
 
-                egui::Frame::group(ui.style()).inner_margin(18.0).corner_radius(10.0).show(ui, |ui| {
-                    ui.set_width(380.0);
-                    ui.horizontal(|ui| {
-                        ui.selectable_value(&mut self.cfg.kind, KeyKind::User, "Personal key (1ck_)");
-                        ui.selectable_value(&mut self.cfg.kind, KeyKind::Agent, "Agent key (ocv_)");
-                    });
-                    ui.add_space(8.0);
+                sc.card(1).corner_radius(CornerRadius::same(28)).inner_margin(Margin::same(24)).show(ui, |ui| {
+                    ui.set_width(400.0);
+                    ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                        segmented(ui, &sc, &mut self.cfg.kind, &[(KeyKind::User, "Personal key"), (KeyKind::Agent, "Agent key")]);
+                        ui.add_space(14.0);
 
-                    ui.label("API key");
-                    let key = ui.add(
-                        egui::TextEdit::singleline(&mut self.api_key)
-                            .password(true)
-                            .hint_text("paste your key")
-                            .desired_width(f32::INFINITY),
-                    );
-
-                    if self.cfg.kind == KeyKind::Agent {
-                        ui.add_space(4.0);
-                        ui.label("Agent ID (optional)");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.cfg.agent_id)
-                                .hint_text("only needed for older keys")
+                        field_label(ui, &sc, "API key");
+                        let hint = if self.cfg.kind == KeyKind::User { "1ck_..." } else { "ocv_..." };
+                        let key = ui.add(
+                            egui::TextEdit::singleline(&mut self.api_key)
+                                .password(true)
+                                .hint_text(hint)
+                                .margin(Margin::symmetric(14, 10))
                                 .desired_width(f32::INFINITY),
                         );
-                    }
 
-                    ui.add_space(4.0);
-                    ui.checkbox(&mut self.cfg.remember, "Remember me").on_hover_text(
-                        "Keeps the key in your config folder so you're signed in next time.\n\
-                         It's stored as plain text (readable only by your user).",
-                    );
+                        if self.cfg.kind == KeyKind::Agent {
+                            ui.add_space(6.0);
+                            field_label(ui, &sc, "Agent ID (optional)");
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.cfg.agent_id)
+                                    .hint_text("only needed for older keys")
+                                    .margin(Margin::symmetric(14, 10))
+                                    .desired_width(f32::INFINITY),
+                            );
+                        }
 
-                    ui.add_space(4.0);
-                    egui::CollapsingHeader::new("Advanced").show(ui, |ui| {
-                        ui.label("API base URL");
-                        ui.add(egui::TextEdit::singleline(&mut self.cfg.base_url).desired_width(f32::INFINITY));
-                    });
+                        ui.add_space(6.0);
+                        ui.checkbox(&mut self.cfg.remember, "Remember me").on_hover_text(
+                            "Keeps the key in your config folder so you're signed in next time.\n\
+                             It's stored as plain text (readable only by your user).",
+                        );
 
-                    ui.add_space(10.0);
-                    let can_go = !self.api_key.trim().is_empty() && self.busy == 0;
-                    let enter = key.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                    let btn = ui.add_enabled(
-                        can_go,
-                        egui::Button::new(RichText::new("Connect").strong().color(Color32::WHITE))
-                            .fill(ACCENT)
-                            .min_size(egui::vec2(ui.available_width(), 34.0)),
-                    );
-                    if (btn.clicked() || enter) && can_go {
-                        self.connect(true);
-                    }
-                    if self.busy > 0 {
-                        ui.horizontal(|ui| {
-                            ui.spinner();
-                            ui.label("Signing in...");
+                        egui::CollapsingHeader::new(RichText::new("Advanced").color(sc.on_surface_variant)).show(ui, |ui| {
+                            field_label(ui, &sc, "API base URL");
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.cfg.base_url)
+                                    .margin(Margin::symmetric(14, 10))
+                                    .desired_width(f32::INFINITY),
+                            );
                         });
-                    }
-                    if let Some(e) = &self.login_error {
-                        ui.colored_label(Color32::from_rgb(0xE0, 0x4F, 0x4F), e);
-                    }
-                });
 
-                ui.add_space(10.0);
-                ui.hyperlink_to(RichText::new("Get a key at 1claw.co").small(), "https://1claw.co");
-            });
-        });
-    }
-
-    fn top_bar(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::top("top").show(ctx, |ui| {
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("🔐 1Claw Vault Explorer").strong());
-                ui.separator();
-                let before = self.tab;
-                ui.selectable_value(&mut self.tab, Tab::Secrets, "🗝 Secrets");
-                ui.selectable_value(&mut self.tab, Tab::Policies, "🛡 Policies");
-                ui.selectable_value(&mut self.tab, Tab::Activity, "📜 Activity");
-                if before != self.tab {
-                    self.load_tab();
-                }
-
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Sign out").clicked() {
-                        self.logout();
-                    }
-                    let icon = if self.cfg.dark { "☀" } else { "🌙" };
-                    if ui.button(icon).on_hover_text("Toggle theme").clicked() {
-                        self.cfg.dark = !self.cfg.dark;
-                        apply_theme(ctx, self.cfg.dark);
-                        self.cfg.save();
-                    }
-                    if ui.button("⟳").on_hover_text("Refresh (F5)").clicked() {
-                        self.refresh();
-                    }
-                    if self.busy > 0 {
-                        ui.spinner();
-                    }
-                });
-            });
-            ui.add_space(2.0);
-        });
-    }
-
-    fn status_bar(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                match &self.toast {
-                    Some(t) if t.at.elapsed() < Duration::from_secs(if t.error { 8 } else { 4 }) => {
-                        let c = if t.error { Color32::from_rgb(0xE0, 0x4F, 0x4F) } else { ui.visuals().text_color() };
-                        ui.colored_label(c, &t.text);
-                        ctx.request_repaint_after(Duration::from_millis(500));
-                    }
-                    _ => {
-                        ui.label(RichText::new(format!("{} vaults", self.vaults.len())).weak());
-                        if let Some(s) = &self.secrets {
-                            ui.label(RichText::new(format!("· {} secrets in this vault", s.len())).weak());
+                        ui.add_space(12.0);
+                        let can_go = !self.api_key.trim().is_empty() && self.busy == 0;
+                        let enter = key.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        let label = if self.busy > 0 { "Signing in..." } else { "Connect" };
+                        let btn = ui.add_enabled(can_go, sc.filled(label).min_size(egui::vec2(ui.available_width(), 44.0)));
+                        if (btn.clicked() || enter) && can_go {
+                            self.connect(true);
                         }
-                    }
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(RichText::new(self.cfg.base_url.trim_start_matches("https://")).weak().small());
-                });
-            });
-        });
-    }
-
-    fn vault_panel(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::left("vaults").resizable(true).default_width(220.0).show(ctx, |ui| {
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.heading("Vaults");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("＋").on_hover_text("New vault").clicked() {
-                        self.new_vault = Some(Default::default());
-                    }
-                });
-            });
-            ui.add(egui::TextEdit::singleline(&mut self.vault_filter).hint_text("🔍 filter").desired_width(f32::INFINITY));
-            ui.add_space(4.0);
-
-            let q = self.vault_filter.to_lowercase();
-            let mut clicked = None;
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                if self.vaults.is_empty() && self.busy == 0 {
-                    ui.label(RichText::new("No vaults yet. Hit ＋ to make one.").weak());
-                }
-                for v in self.vaults.iter().filter(|v| q.is_empty() || v.name.to_lowercase().contains(&q)) {
-                    let sel = self.selected_vault.as_deref() == Some(&v.id);
-                    let mut label = format!("🗄 {}", v.name);
-                    if v.cmek_enabled == Some(true) {
-                        label.push_str("  🔑");
-                    }
-                    let r = ui.add_sized(
-                        [ui.available_width(), 26.0],
-                        egui::SelectableLabel::new(sel, label),
-                    );
-                    let r = match v.description.as_deref().filter(|d| !d.is_empty()) {
-                        Some(d) => r.on_hover_text(d),
-                        None => r,
-                    };
-                    if r.clicked() {
-                        clicked = Some(v.id.clone());
-                    }
-                    r.context_menu(|ui| {
-                        if ui.button("Copy vault ID").clicked() {
-                            ctx.copy_text(v.id.clone());
-                            ui.close_menu();
-                        }
-                        if ui.button("🗑 Delete vault...").clicked() {
-                            self.confirm_vault_delete = Some(v.id.clone());
-                            ui.close_menu();
+                        if let Some(e) = &self.login_error {
+                            ui.add_space(8.0);
+                            sc.card(0)
+                                .fill(sc.error_container)
+                                .corner_radius(CornerRadius::same(12))
+                                .inner_margin(Margin::symmetric(12, 8))
+                                .show(ui, |ui| {
+                                    ui.set_width(ui.available_width());
+                                    ui.label(RichText::new(format!("⚠ {e}")).color(sc.on_error_container));
+                                });
                         }
                     });
-                }
+                });
+
+                ui.add_space(14.0);
+                ui.horizontal(|ui| {
+                    // poor man's centering for a horizontal row
+                    ui.add_space((ui.available_width() - 300.0).max(0.0) / 2.0);
+                    ui.hyperlink_to(RichText::new("Get a key at 1claw.co").small(), "https://1claw.co");
+                    ui.label(RichText::new("·").small().color(sc.outline));
+                    self.palette_inline(ui, ctx);
+                });
             });
-            if let Some(id) = clicked {
-                self.select_vault(id);
+        });
+        self.snackbar(ctx);
+    }
+
+    /// Theme toggle + seed swatches, shared by the login screen and the menu.
+    fn palette_inline(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let sc = theme::scheme(ctx);
+        let icon = if self.cfg.dark { "☀" } else { "🌙" };
+        if ui.add(sc.text_button(icon, sc.on_surface_variant)).on_hover_text("Light / dark").clicked() {
+            self.cfg.dark = !self.cfg.dark;
+            self.retheme(ctx);
+        }
+        ui.menu_button(RichText::new("🎨").color(sc.on_surface_variant), |ui| self.palette_menu(ui, ctx));
+    }
+
+    fn palette_menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let sc = theme::scheme(ctx);
+        ui.label(RichText::new("Color").small().color(sc.on_surface_variant));
+        ui.horizontal(|ui| {
+            for (seed, name) in theme::SEEDS {
+                let c = Color32::from_rgb(seed[0], seed[1], seed[2]);
+                if theme::swatch(ui, c, *seed == self.cfg.seed, sc.on_surface).on_hover_text(*name).clicked() {
+                    self.cfg.seed = *seed;
+                    self.retheme(ctx);
+                }
+            }
+        });
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            if ui.selectable_label(!self.cfg.dark, "☀ Light").clicked() {
+                self.cfg.dark = false;
+                self.retheme(ctx);
+            }
+            if ui.selectable_label(self.cfg.dark, "🌙 Dark").clicked() {
+                self.cfg.dark = true;
+                self.retheme(ctx);
             }
         });
     }
 
-    fn vault_dialogs(&mut self, ctx: &egui::Context) {
-        if let Some((name, desc)) = self.new_vault.as_mut() {
-            let mut open = true;
-            let mut submit = false;
-            egui::Window::new("New vault")
-                .collapsible(false)
-                .resizable(false)
-                .open(&mut open)
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .show(ctx, |ui| {
-                    ui.label("Name");
-                    ui.text_edit_singleline(name);
-                    ui.label("Description");
-                    ui.text_edit_singleline(desc);
-                    ui.add_space(6.0);
-                    submit = ui.add_enabled(!name.trim().is_empty(), egui::Button::new("Create")).clicked()
-                        || (ui.input(|i| i.key_pressed(egui::Key::Enter)) && !name.trim().is_empty());
+    fn retheme(&mut self, ctx: &egui::Context) {
+        theme::apply(ctx, self.cfg.seed, self.cfg.dark);
+        self.cfg.save();
+    }
+
+    fn top_bar(&mut self, ctx: &egui::Context) {
+        let sc = theme::scheme(ctx);
+        egui::TopBottomPanel::top("top")
+            .show_separator_line(false)
+            .exact_height(60.0)
+            .frame(sc.panel(sc.surface_container_low).inner_margin(Margin::symmetric(16, 0)))
+            .show(ctx, |ui| {
+                ui.horizontal_centered(|ui| {
+                    theme::icon_tile(ui, &sc, "🔐", 36.0);
+                    ui.label(RichText::new("Vault Explorer").size(19.0).color(sc.on_surface));
+                    ui.add_space(18.0);
+
+                    let before = self.tab;
+                    segmented(
+                        ui,
+                        &sc,
+                        &mut self.tab,
+                        &[(Tab::Secrets, "🗝  Secrets"), (Tab::Policies, "🛡  Policies"), (Tab::Activity, "📜  Activity")],
+                    );
+                    if before != self.tab {
+                        self.load_tab();
+                    }
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.add(sc.tonal("Sign out")).clicked() {
+                            self.logout();
+                        }
+                        ui.menu_button(RichText::new("🎨").size(16.0).color(sc.on_surface_variant), |ui| {
+                            self.palette_menu(ui, ctx)
+                        })
+                        .response
+                        .on_hover_text("Theme");
+                        if ui.add(sc.text_button("⟳", sc.on_surface_variant)).on_hover_text("Refresh (F5)").clicked() {
+                            self.refresh();
+                        }
+                        if self.busy > 0 {
+                            ui.add(egui::Spinner::new().color(sc.primary));
+                        }
+                    });
                 });
+            });
+    }
+
+    /// M3 snackbar - floats at the bottom center, inverse colors.
+    fn snackbar(&mut self, ctx: &egui::Context) {
+        let Some(t) = &self.toast else { return };
+        let ttl = Duration::from_secs(if t.error { 8 } else { 4 });
+        if t.at.elapsed() >= ttl {
+            self.toast = None;
+            return;
+        }
+        ctx.request_repaint_after(Duration::from_millis(250));
+        let sc = theme::scheme(ctx);
+        let (bg, fg) = if t.error { (sc.error_container, sc.on_error_container) } else { (sc.on_surface, sc.surface) };
+        let mut dismiss = false;
+        egui::Area::new(egui::Id::new("snackbar"))
+            .anchor(egui::Align2::CENTER_BOTTOM, [0.0, -20.0])
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                egui::Frame::new()
+                    .fill(bg)
+                    .corner_radius(CornerRadius::same(10))
+                    .inner_margin(Margin::symmetric(16, 12))
+                    .shadow(ctx.style().visuals.popup_shadow)
+                    .show(ui, |ui| {
+                        ui.set_max_width(520.0);
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(&t.text).color(fg));
+                            ui.add_space(12.0);
+                            let accent = if t.error { sc.error } else { sc.primary_container };
+                            if ui.add(sc.text_button("Dismiss", accent)).clicked() {
+                                dismiss = true;
+                            }
+                        });
+                    });
+            });
+        if dismiss {
+            self.toast = None;
+        }
+    }
+
+    fn vault_panel(&mut self, ctx: &egui::Context) {
+        let sc = theme::scheme(ctx);
+        egui::SidePanel::left("vaults")
+            .resizable(true)
+            .show_separator_line(false)
+            .default_width(240.0)
+            .frame(sc.panel(sc.surface_container_low).inner_margin(Margin::symmetric(12, 12)))
+            .show(ctx, |ui| {
+                if ui.add(sc.filled("+   New vault").min_size(egui::vec2(0.0, 48.0)).corner_radius(CornerRadius::same(16))).clicked() {
+                    self.new_vault = Some(Default::default());
+                }
+                ui.add_space(10.0);
+                search_bar(ui, &mut self.vault_filter, "Search vaults");
+                ui.add_space(8.0);
+                ui.label(RichText::new(format!("VAULTS · {}", self.vaults.len())).small().strong().color(sc.on_surface_variant));
+
+                let q = self.vault_filter.to_lowercase();
+                let mut clicked = None;
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    if self.vaults.is_empty() && self.busy == 0 {
+                        ui.label(RichText::new("No vaults yet.").color(sc.on_surface_variant));
+                    }
+                    for v in self.vaults.iter().filter(|v| q.is_empty() || v.name.to_lowercase().contains(&q)) {
+                        let sel = self.selected_vault.as_deref() == Some(&v.id);
+                        let mut label = format!("🗄   {}", v.name);
+                        if v.cmek_enabled == Some(true) {
+                            label.push_str("  🔑");
+                        }
+                        let r = theme::nav_item(ui, &sc, &label, sel, 44.0);
+                        let r = match v.description.as_deref().filter(|d| !d.is_empty()) {
+                            Some(d) => r.on_hover_text(d),
+                            None => r,
+                        };
+                        if r.clicked() {
+                            clicked = Some(v.id.clone());
+                        }
+                        r.context_menu(|ui| {
+                            if ui.button("🗐  Copy vault ID").clicked() {
+                                ctx.copy_text(v.id.clone());
+                                ui.close_menu();
+                            }
+                            if ui.button(RichText::new("🗑  Delete vault...").color(sc.error)).clicked() {
+                                self.confirm_vault_delete = Some(v.id.clone());
+                                ui.close_menu();
+                            }
+                        });
+                    }
+                });
+                if let Some(id) = clicked {
+                    self.select_vault(id);
+                }
+            });
+    }
+
+    fn vault_dialogs(&mut self, ctx: &egui::Context) {
+        let sc = theme::scheme(ctx);
+        if let Some((name, desc)) = self.new_vault.as_mut() {
+            let mut cancel = false;
+            let mut submit = false;
+            dialog(ctx, "New vault", |ui| {
+                ui.label(RichText::new("Vaults group secrets and have their own access policies.").color(sc.on_surface_variant));
+                ui.add_space(8.0);
+                field_label(ui, &sc, "Name");
+                ui.add(egui::TextEdit::singleline(name).margin(Margin::symmetric(14, 10)).desired_width(f32::INFINITY));
+                field_label(ui, &sc, "Description");
+                ui.add(egui::TextEdit::singleline(desc).margin(Margin::symmetric(14, 10)).desired_width(f32::INFINITY));
+                ui.add_space(12.0);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let ok = !name.trim().is_empty();
+                    submit = ui.add_enabled(ok, sc.filled("Create")).clicked()
+                        || (ok && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+                    cancel = ui.add(sc.text_button("Cancel", sc.primary)).clicked();
+                });
+            });
             if submit {
                 let (n, d) = self.new_vault.take().unwrap();
                 self.job(Job::CreateVault { name: n.trim().to_string(), description: d.trim().to_string() });
-            } else if !open {
+            } else if cancel || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
                 self.new_vault = None;
             }
         }
 
         if let Some(id) = self.confirm_vault_delete.clone() {
             let name = self.vaults.iter().find(|v| v.id == id).map(|v| v.name.clone()).unwrap_or_default();
-            let mut keep = true;
-            egui::Window::new("Delete vault?")
-                .collapsible(false)
-                .resizable(false)
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .show(ctx, |ui| {
-                    ui.label(format!("\"{name}\" and every secret in it will be gone for good."));
-                    ui.add_space(6.0);
-                    ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
-                            keep = false;
-                        }
-                        let del = egui::Button::new(RichText::new("Delete").color(Color32::WHITE))
-                            .fill(Color32::from_rgb(0xC0, 0x39, 0x2B));
-                        if ui.add(del).clicked() {
-                            self.job(Job::DeleteVault(id.clone()));
-                            keep = false;
-                        }
-                    });
+            let mut keep = !ctx.input(|i| i.key_pressed(egui::Key::Escape));
+            dialog(ctx, "Delete vault?", |ui| {
+                ui.label(RichText::new(format!("\"{name}\" and every secret in it will be gone for good.")).color(sc.on_surface_variant));
+                ui.add_space(14.0);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.add(sc.danger("Delete")).clicked() {
+                        self.job(Job::DeleteVault(id.clone()));
+                        keep = false;
+                    }
+                    if ui.add(sc.text_button("Cancel", sc.primary)).clicked() {
+                        keep = false;
+                    }
                 });
+            });
             if !keep {
                 self.confirm_vault_delete = None;
             }
@@ -587,6 +660,16 @@ impl eframe::App for App {
             }
         }
 
+        // some compositors (KWin) ignore the initial size hint and open us tiny,
+        // so ask again once we're actually on screen
+        if !self.sized {
+            self.sized = true;
+            let r = ctx.screen_rect();
+            if r.width() < 760.0 || r.height() < 480.0 {
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(1180.0, 740.0)));
+            }
+        }
+
         if self.screen == Screen::Login {
             self.login_screen(ctx);
             return;
@@ -597,7 +680,6 @@ impl eframe::App for App {
         }
 
         self.top_bar(ctx);
-        self.status_bar(ctx);
         self.vault_panel(ctx);
         self.vault_dialogs(ctx);
 
@@ -606,17 +688,71 @@ impl eframe::App for App {
             Tab::Policies => crate::views::policies(self, ctx),
             Tab::Activity => crate::views::activity(self, ctx),
         }
+        self.snackbar(ctx);
     }
 }
 
-fn apply_theme(ctx: &egui::Context, dark: bool) {
-    let mut v = if dark { egui::Visuals::dark() } else { egui::Visuals::light() };
-    v.selection.bg_fill = ACCENT.gamma_multiply(if dark { 0.55 } else { 0.35 });
-    v.hyperlink_color = ACCENT;
-    v.window_corner_radius = 10.0.into();
-    ctx.set_visuals(v);
-    ctx.style_mut(|s| {
-        s.spacing.item_spacing = egui::vec2(8.0, 6.0);
-        s.spacing.button_padding = egui::vec2(8.0, 4.0);
-    });
+// --- small shared widgets ---
+
+/// M3 segmented button. Works for any Copy + PartialEq value.
+pub fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, sc: &theme::Scheme, value: &mut T, options: &[(T, &str)]) {
+    egui::Frame::new()
+        .stroke(egui::Stroke::new(1.0f32, sc.outline_variant))
+        .corner_radius(CornerRadius::same(20))
+        .inner_margin(Margin::same(3))
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            ui.horizontal(|ui| {
+                for (v, label) in options {
+                    let sel = *value == *v;
+                    let (fill, fg) = if sel { (sc.secondary_container, sc.on_secondary_container) } else { (Color32::TRANSPARENT, sc.on_surface) };
+                    let text = if sel { format!("✔ {label}") } else { label.to_string() };
+                    let b = egui::Button::new(RichText::new(text).color(fg))
+                        .fill(fill)
+                        .corner_radius(CornerRadius::same(17))
+                        .min_size(egui::vec2(0.0, 32.0));
+                    if ui.add(b).clicked() {
+                        *value = *v;
+                    }
+                }
+            });
+        });
+}
+
+pub fn search_bar(ui: &mut egui::Ui, text: &mut String, hint: &str) -> egui::Response {
+    ui.add(
+        egui::TextEdit::singleline(text)
+            .hint_text(format!("🔍  {hint}"))
+            .margin(Margin::symmetric(16, 10))
+            .desired_width(f32::INFINITY),
+    )
+}
+
+pub fn field_label(ui: &mut egui::Ui, sc: &theme::Scheme, text: &str) {
+    ui.label(RichText::new(text).small().strong().color(sc.on_surface_variant));
+}
+
+/// Centered modal-ish window with M3 dialog styling + a scrim behind it.
+pub fn dialog(ctx: &egui::Context, title: &str, body: impl FnOnce(&mut egui::Ui)) {
+    let sc = theme::scheme(ctx);
+    let screen = ctx.screen_rect();
+    egui::Area::new(egui::Id::new(("scrim", title)))
+        .order(egui::Order::Middle)
+        .fixed_pos(screen.min)
+        .interactable(true)
+        .show(ctx, |ui| {
+            let (_, r) = ui.allocate_exact_size(screen.size(), egui::Sense::click());
+            ui.painter().rect_filled(r.rect, 0.0, Color32::from_black_alpha(if sc.dark { 120 } else { 70 }));
+        });
+    egui::Window::new(RichText::new(title).size(22.0).color(sc.on_surface))
+        .id(egui::Id::new(("dlg", title)))
+        .collapsible(false)
+        .resizable(false)
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .frame(egui::Frame::window(&ctx.style()).fill(sc.surface_container_high).inner_margin(Margin::same(24)))
+        .show(ctx, |ui| {
+            ui.set_min_width(360.0);
+            body(ui)
+        });
 }

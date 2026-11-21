@@ -13,6 +13,8 @@ pub struct Config {
     pub kind: KeyKind,
     pub agent_id: String,
     pub dark: bool,
+    /// Material You seed color
+    pub seed: [u8; 3],
     pub remember: bool,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub api_key: String,
@@ -25,6 +27,7 @@ impl Default for Config {
             kind: KeyKind::User,
             agent_id: String::new(),
             dark: true,
+            seed: crate::theme::DEFAULT_SEED,
             remember: false,
             api_key: String::new(),
         }
