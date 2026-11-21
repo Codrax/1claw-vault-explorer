@@ -27,7 +27,7 @@ You can also skip the form:
 ONECLAW_API_KEY=1ck_xxx cargo run --release
 ```
 
-The app only saves the base URL, the key type and the theme. That file is `~/.config/vault-explorer/config.json` on Linux and the equivalent folder on other platforms. **Your key is never written to disk.**
+Tick **Remember me** to stay signed in. The key then gets saved in the config file, which is `~/.config/vault-explorer/config.json` on Linux and the equivalent folder on other platforms. The same file holds the base URL, key type and theme. It's plain JSON, so on Linux/macOS the file is set to `0600` (only your user can read it). **Sign out** removes the saved key. If you leave the box unticked, the key is never written to disk.
 
 The base URL is `https://api.1claw.co` unless you change it under *Advanced* (for example to `http://localhost:8443` for a local dev server).
 
@@ -47,7 +47,7 @@ src/
   worker.rs   background thread so the ui never waits on the network
   app.rs      app state, login screen, top bar, vault sidebar
   views.rs    secrets / policies / activity tabs
-  config.rs   remembers the non-secret login bits
+  config.rs   saved settings (+ the key, if you tick remember me)
 ```
 
 ## Notes

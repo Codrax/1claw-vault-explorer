@@ -112,8 +112,13 @@ impl App {
                 if app.api_key.starts_with("ocv_") {
                     app.cfg.kind = KeyKind::Agent;
                 }
-                app.connect();
+                app.connect(false);
+                return app;
             }
+        }
+        if app.cfg.remember && !app.cfg.api_key.is_empty() {
+            app.api_key = app.cfg.api_key.clone();
+            app.connect(false);
         }
         app
     }
@@ -131,8 +136,17 @@ impl App {
         self.toast = Some(Toast { text: t.into(), error: true, at: Instant::now() });
     }
 
-    fn connect(&mut self) {
+    /// `persist` is false for keys that didn't come from the form (env var,
+    /// already saved) so we don't overwrite what's on disk with them.
+    fn connect(&mut self, persist: bool) {
         self.login_error = None;
+        if persist {
+            if self.cfg.remember {
+                self.cfg.api_key = self.api_key.trim().to_string();
+            } else {
+                self.cfg.api_key.clear();
+            }
+        }
         let creds = Credentials {
             base_url: self.cfg.base_url.trim().to_string(),
             kind: self.cfg.kind,
@@ -147,6 +161,11 @@ impl App {
         // wipe everything that came from the server
         self.screen = Screen::Login;
         self.api_key.clear();
+        // signing out on purpose means forget the key, the checkbox stays ticked though
+        if !self.cfg.api_key.is_empty() {
+            self.cfg.api_key.clear();
+            self.cfg.save();
+        }
         self.worker.send(Job::Logout);
         self.vaults.clear();
         self.selected_vault = None;
@@ -343,6 +362,12 @@ impl App {
                     }
 
                     ui.add_space(4.0);
+                    ui.checkbox(&mut self.cfg.remember, "Remember me").on_hover_text(
+                        "Keeps the key in your config folder so you're signed in next time.\n\
+                         It's stored as plain text (readable only by your user).",
+                    );
+
+                    ui.add_space(4.0);
                     egui::CollapsingHeader::new("Advanced").show(ui, |ui| {
                         ui.label("API base URL");
                         ui.add(egui::TextEdit::singleline(&mut self.cfg.base_url).desired_width(f32::INFINITY));
@@ -358,7 +383,7 @@ impl App {
                             .min_size(egui::vec2(ui.available_width(), 34.0)),
                     );
                     if (btn.clicked() || enter) && can_go {
-                        self.connect();
+                        self.connect(true);
                     }
                     if self.busy > 0 {
                         ui.horizontal(|ui| {
