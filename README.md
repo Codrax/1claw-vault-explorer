@@ -11,7 +11,7 @@ A small desktop app for poking around your [1Claw](https://1claw.co) vaults. Wri
   - **New version** writes an update. **History** lists older versions so you can view each one.
 - **Policies**: each policy's path pattern, principal, permissions, allow/deny and expiry.
 - **Activity**: the audit log, either for the current vault or the whole org, with a filter on action and actor.
-- Light and dark theme. Press F5 to refresh.
+- Material You look. The whole palette is generated from one seed color (🎨 menu, 7 to pick from), in light or dark. Press F5 to refresh.
 
 ## Running it
 
@@ -27,7 +27,7 @@ You can also skip the form:
 ONECLAW_API_KEY=1ck_xxx cargo run --release
 ```
 
-Tick **Remember me** to stay signed in. The key then gets saved in the config file, which is `~/.config/vault-explorer/config.json` on Linux and the equivalent folder on other platforms. The same file holds the base URL, key type and theme. It's plain JSON, so on Linux/macOS the file is set to `0600` (only your user can read it). **Sign out** removes the saved key. If you leave the box unticked, the key is never written to disk.
+Tick **Remember me** to stay signed in. The key then gets saved in the config file, which is `~/.config/vault-explorer/config.json` on Linux and the equivalent folder on other platforms. The same file holds the base URL, key type, theme and seed color. It's plain JSON, so on Linux/macOS the file is set to `0600` (only your user can read it). **Sign out** removes the saved key. If you leave the box unticked, the key is never written to disk.
 
 The base URL is `https://api.1claw.co` unless you change it under *Advanced* (for example to `http://localhost:8443` for a local dev server).
 
@@ -47,6 +47,7 @@ src/
   worker.rs   background thread so the ui never waits on the network
   app.rs      app state, login screen, top bar, vault sidebar
   views.rs    secrets / policies / activity tabs
+  theme.rs    Material You palette from a seed color + a few M3 style widgets
   config.rs   saved settings (+ the key, if you tick remember me)
 ```
 
