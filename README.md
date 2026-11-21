@@ -2,6 +2,21 @@
 
 A small desktop app for poking around your [1Claw](https://1claw.co) vaults. Written in Rust with egui, so it's a single native binary with no Electron and no browser tab.
 
+![Secrets view](docs/screenshots/secrets.png)
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Sign in](docs/screenshots/login.png) | ![Light theme, violet seed](docs/screenshots/light.png) |
+| Sign in with a personal or agent key | Light mode with a different seed color |
+| ![New secret](docs/screenshots/new-secret.png) | ![Policies](docs/screenshots/policies.png) |
+| Adding a secret | Access policies for a vault |
+| ![Activity](docs/screenshots/activity.png) | |
+| Audit log | |
+
+*(the data in these is from a fake local server, not a real vault)*
+
 ## What it does
 
 - **Vaults**: list, filter, create, and delete them. Right-click a vault to copy its ID.
