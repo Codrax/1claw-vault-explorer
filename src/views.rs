@@ -497,3 +497,28 @@ pub fn activity(app: &mut App, ctx: &egui::Context) {
         });
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn meta(path: &str) -> SecretMeta {
+        serde_json::from_value(serde_json::json!({ "id": path, "path": path, "type": "generic", "version": 1 })).unwrap()
+    }
+
+    #[test]
+    fn tree_groups_by_folder() {
+        let list = vec![meta("db/prod/pw"), meta("db/staging/pw"), meta("stripe_key")];
+        let t = build_tree(&list, "");
+        assert_eq!(t.leaves.len(), 1);
+        assert_eq!(t.dirs["db"].dirs.len(), 2);
+    }
+
+    #[test]
+    fn tree_filter() {
+        let list = vec![meta("db/prod/pw"), meta("stripe_key")];
+        let t = build_tree(&list, "stripe");
+        assert!(t.dirs.is_empty());
+        assert_eq!(t.leaves.len(), 1);
+    }
+}
