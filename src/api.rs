@@ -1,6 +1,8 @@
 // Thin blocking client for the 1Claw REST API.
 // Only covers what the explorer actually needs - vaults, secrets, versions,
 // policies and the audit log.
+// Response structs mirror the API, not every field is shown in the ui yet.
+#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

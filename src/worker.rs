@@ -7,6 +7,7 @@ use std::thread;
 
 pub enum Job {
     Login(Credentials),
+    Logout,
     Vaults,
     CreateVault { name: String, description: String },
     DeleteVault(String),
@@ -83,12 +84,17 @@ fn run(client: &mut Option<Client>, job: Job) -> Vec<Msg> {
         };
     }
 
+    if let Job::Logout = job {
+        *client = None; // drops the key + token
+        return vec![];
+    }
+
     let Some(c) = client.as_mut() else {
         return vec![Msg::Error("not signed in".into())];
     };
 
     let res: Result<Msg, String> = match job {
-        Job::Login(_) => unreachable!(),
+        Job::Login(_) | Job::Logout => unreachable!(),
         Job::Vaults => c.vaults().map(Msg::Vaults),
         Job::CreateVault { name, description } => c.create_vault(&name, &description).map(Msg::VaultCreated),
         Job::DeleteVault(id) => c.delete_vault(&id).map(|_| Msg::VaultDeleted(id)),

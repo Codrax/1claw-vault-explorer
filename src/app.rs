@@ -35,6 +35,7 @@ pub struct Detail {
     pub versions: Option<Vec<SecretMeta>>,
     pub copy_when_loaded: bool,
     pub confirm_delete: bool,
+    pub versions_requested: bool,
 }
 
 #[derive(Default)]
@@ -70,6 +71,7 @@ pub struct App {
     pub policies: Option<Vec<Policy>>,
     pub audit: Option<Vec<AuditEvent>>,
     pub audit_vault_only: bool,
+    pub audit_filter: String,
 
     pub toast: Option<Toast>,
     pub clipboard_set_at: Option<Instant>,
@@ -99,6 +101,7 @@ impl App {
             policies: None,
             audit: None,
             audit_vault_only: true,
+            audit_filter: String::new(),
             toast: None,
             clipboard_set_at: None,
         };
@@ -144,6 +147,7 @@ impl App {
         // wipe everything that came from the server
         self.screen = Screen::Login;
         self.api_key.clear();
+        self.worker.send(Job::Logout);
         self.vaults.clear();
         self.selected_vault = None;
         self.reset_vault_view();
@@ -169,12 +173,13 @@ impl App {
 
     /// Fetch whatever the current tab needs, if we don't have it yet.
     pub fn load_tab(&mut self) {
-        let Some(v) = self.selected_vault.clone() else { return };
-        match self.tab {
-            Tab::Secrets if self.secrets.is_none() => self.job(Job::Secrets(v)),
-            Tab::Policies if self.policies.is_none() => self.job(Job::Policies(v)),
-            Tab::Activity if self.audit.is_none() => {
-                let rid = self.audit_vault_only.then_some(v);
+        let v = self.selected_vault.clone();
+        match (self.tab, v) {
+            (Tab::Secrets, Some(v)) if self.secrets.is_none() => self.job(Job::Secrets(v)),
+            (Tab::Policies, Some(v)) if self.policies.is_none() => self.job(Job::Policies(v)),
+            // activity works without a vault too, it just shows the whole org
+            (Tab::Activity, v) if self.audit.is_none() => {
+                let rid = v.filter(|_| self.audit_vault_only);
                 self.job(Job::Audit { resource_id: rid })
             }
             _ => {}
@@ -497,7 +502,7 @@ impl App {
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ctx, |ui| {
                     ui.label("Name");
-                    ui.text_edit_singleline(name).request_focus();
+                    ui.text_edit_singleline(name);
                     ui.label("Description");
                     ui.text_edit_singleline(desc);
                     ui.add_space(6.0);
